@@ -1,0 +1,164 @@
+#!/usr/bin/env perl
+
+use strict;
+use utf8;
+use feature ':5.10';
+no warnings qw( experimental );
+
+use Data::Dumper;
+use Getopt::Long;
+use IO::File;
+use Log::Log4perl;
+
+use constant DEFAULT_DICT_FILE => '/usr/share/dict/words';
+
+my %options = ();
+GetOptions(\%options,
+    'help',
+    'dict-file:s',
+    'max-words=i',
+    'max-size=s'
+);
+
+if ($options{'help'}) {
+    print_usage();
+    exit 0;
+}
+
+if (@ARGV != 1) {
+    print_usage();
+    exit 1;
+}
+
+my $config_str = '';
+$config_str .= $_ while (<DATA>);
+Log::Log4perl::init(\$config_str);
+my $logger = Log::Log4perl->get_logger();
+
+$logger->info("$0 started");
+
+my $dict_file = $options{'dict-file'} || DEFAULT_DICT_FILE;
+$logger->info("Dic file: $dict_file");
+
+my $max_words_per_line = $options{'max-words'};
+$logger->info("Max words per line: $max_words_per_line");
+
+my $max_size = $options{'max-size'};
+$logger->info("Max file size: $max_size");
+
+$max_size =~ s/\s*//g;
+given($max_size) {
+    when (/k$/i) {
+        chop $max_size;
+        $max_size *= 1024;
+    }
+    when (/m$/i) {
+        chop $max_size;
+        $max_size *= 1024 ** 2;
+    }
+    when (/g$/i) {
+        chop $max_size;
+        $max_size *= 1024 ** 3;
+    }
+}
+
+$logger->debug("Translated max_size to $max_size byte");
+
+my @dictionary = ();
+my $dict_fh = IO::File->new($dict_file) or
+    die "Cannot open file $dict_file! Reason: $!";
+push(@dictionary, $_) while (<$dict_fh>);
+$dict_fh->close();
+$logger->info("Loaded dict file $dict_file");
+
+my $out_file = shift @ARGV;
+$logger->info("Generating file $out_file");
+my $out_fh = IO::File->new($out_file, O_WRONLY | O_CREAT | O_TRUNC) or
+    die "Cannot open file $out_file! Reason: $!";
+$out_fh->autoflush(1);
+while ((stat($out_file))[7] < $max_size) {
+    my $rnd_string = random_string(
+        dict => \@dictionary, max_words => $max_words_per_line);
+    $logger->debug($rnd_string);
+    print $out_fh $rnd_string, "\n";
+}
+$out_fh->close();
+$logger->info("Finished");
+
+###############################################################################
+#
+#                          F U N C T I O N S
+#
+###############################################################################
+
+#
+# random_string - generates a random text string based on supplied dict array
+#
+sub random_string {
+    my %args = @_;
+    my $dict = $args{dict};
+    my $max_words = $args{max_words};
+
+    my $logger = Log::Log4perl->get_logger();
+
+    my $dict_len = scalar(@$dict);
+    $logger->debug("Logger length is $dict_len");
+
+    my $iter_max = int(rand($max_words));
+    $logger->debug("Number of words in string: $iter_max");
+
+    my $i = 0;
+    my @result = ();
+    while ($i++ < $iter_max) {
+        my $word = $dict->[int(rand($dict_len))];
+        $word =~ s/\s*//g;
+        $logger->debug("Random word: $word");
+        push(@result, $word);
+    }
+
+    my $rnd_string = join(' ', @result);
+    $logger->debug("Random string: $rnd_string");
+    return $rnd_string;
+}
+
+#
+# print_usage - print usage info
+#
+sub print_usage {
+
+    print <<USAGE_INFO;
+
+    random_text_generator [ OPTIONS ] <output_file>
+
+    OPTIONS
+
+        --help                 - this help message
+
+        --dict-file            - dictionary file
+
+        --max-words (required) - max words per line
+
+        --max-size  (required) - max file size (in bytes).
+                                 You can use K (kilo), M (mega) and G (giga)
+                                 at the end of the size value to specify a
+                                 desired file size
+
+USAGE_INFO
+
+}
+
+__DATA__
+
+log4perl.logger = INFO, ScreenAppender, FileAppender
+
+log4perl.appender.FileAppender=Log::Log4perl::Appender::File
+log4perl.appender.FileAppender.filename=random_text_gen.log
+log4perl.appender.FileAppender.mode=append
+log4perl.appender.FileAppender.autoflush=1
+log4perl.appender.FileAppender.layout=PatternLayout
+
+log4perl.appender.FileAppander.layout.ConversionPattern=%d,%H,%P,%p,%m%n
+log4perl.appender.ScreenAppender=Log::Log4perl::Appender::Screen
+log4perl.appender.ScreenAppender.layout=PatternLayout
+log4perl.appender.ScreenAppender.layout.ConversionPattern=%d %p %m%n
+

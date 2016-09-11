@@ -2,7 +2,10 @@
 random_text_generator
 =====================
 
-Yet Another Random Text Generator Tool
+Yet Another Random Text Generator Tool.
+
+You can specify the number of words per line and the size of a file.
+Plus what dictionary file to use. And that's about it.
 
 Usage
 -----
